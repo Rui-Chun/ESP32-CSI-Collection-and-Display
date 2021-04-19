@@ -1,0 +1,7 @@
+{
+    "idf.flashType": "UART",
+    "idf.port": "/dev/cu.usbserial-142310",
+    "files.associations": {
+        "sockets_component.h": "c"
+    }
+}
