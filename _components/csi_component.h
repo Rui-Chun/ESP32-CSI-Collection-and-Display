@@ -17,73 +17,73 @@ void _wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
     char mac[20] = {0};
     sprintf(mac, "%02X:%02X:%02X:%02X:%02X:%02X", d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
 
-    outprintf("CSI_DATA,");
-    outprintf("%s,", project_type);
-    outprintf("%s,", mac);
+    printf("CSI_DATA,");
+    printf("%s,", project_type);
+    printf("%s,", mac);
 
     // https://github.com/espressif/esp-idf/blob/9d0ca60398481a44861542638cfdc1949bb6f312/components/esp_wifi/include/esp_wifi_types.h#L314
-    outprintf("%d,", d.rx_ctrl.rssi);
-    outprintf("%d,", d.rx_ctrl.rate);
-    outprintf("%d,", d.rx_ctrl.sig_mode);
-    outprintf("%d,", d.rx_ctrl.mcs);
-    outprintf("%d,", d.rx_ctrl.cwb);
-    outprintf("%d,", d.rx_ctrl.smoothing);
-    outprintf("%d,", d.rx_ctrl.not_sounding);
-    outprintf("%d,", d.rx_ctrl.aggregation);
-    outprintf("%d,", d.rx_ctrl.stbc);
-    outprintf("%d,", d.rx_ctrl.fec_coding);
-    outprintf("%d,", d.rx_ctrl.sgi);
-    outprintf("%d,", d.rx_ctrl.noise_floor);
-    outprintf("%d,", d.rx_ctrl.ampdu_cnt);
-    outprintf("%d,", d.rx_ctrl.channel);
-    outprintf("%d,", d.rx_ctrl.secondary_channel);
-    outprintf("%d,", d.rx_ctrl.timestamp);
-    outprintf("%d,", d.rx_ctrl.ant);
-    outprintf("%d,", d.rx_ctrl.sig_len);
-    outprintf("%d,", d.rx_ctrl.rx_state);
+    printf("%d,", d.rx_ctrl.rssi);
+    printf("%d,", d.rx_ctrl.rate);
+    printf("%d,", d.rx_ctrl.sig_mode);
+    printf("%d,", d.rx_ctrl.mcs);
+    printf("%d,", d.rx_ctrl.cwb);
+    printf("%d,", d.rx_ctrl.smoothing);
+    printf("%d,", d.rx_ctrl.not_sounding);
+    printf("%d,", d.rx_ctrl.aggregation);
+    printf("%d,", d.rx_ctrl.stbc);
+    printf("%d,", d.rx_ctrl.fec_coding);
+    printf("%d,", d.rx_ctrl.sgi);
+    printf("%d,", d.rx_ctrl.noise_floor);
+    printf("%d,", d.rx_ctrl.ampdu_cnt);
+    printf("%d,", d.rx_ctrl.channel);
+    printf("%d,", d.rx_ctrl.secondary_channel);
+    printf("%d,", d.rx_ctrl.timestamp);
+    printf("%d,", d.rx_ctrl.ant);
+    printf("%d,", d.rx_ctrl.sig_len);
+    printf("%d,", d.rx_ctrl.rx_state);
 
     char *resp = time_string_get();
-    outprintf("%d,", real_time_set);
-    outprintf("%s,", resp);
+    printf("%d,", real_time_set);
+    printf("%s,", resp);
     free(resp);
 
     int8_t *my_ptr;
 
 #if CSI_RAW
-    outprintf("%d,[", data->len);
+    printf("%d,[", data->len);
     my_ptr = data->buf;
 
     for (int i = 0; i < 128; i++) {
-        outprintf("%d ", my_ptr[i]);
+        printf("%d ", my_ptr[i]);
     }
-    outprintf("]");
+    printf("]");
 #endif
 #if CSI_AMPLITUDE
-    outprintf("%d,[", data->len);
+    printf("%d,[", data->len);
     my_ptr = data->buf;
 
     for (int i = 0; i < 64; i++) {
-        outprintf("%.4f ", sqrt(pow(my_ptr[i * 2], 2) + pow(my_ptr[(i * 2) + 1], 2)));
+        printf("%.4f ", sqrt(pow(my_ptr[i * 2], 2) + pow(my_ptr[(i * 2) + 1], 2)));
     }
-    outprintf("]");
+    printf("]");
 #endif
 #if CSI_PHASE
-    outprintf("%d,[", data->len);
+    printf("%d,[", data->len);
     my_ptr = data->buf;
 
     for (int i = 0; i < 64; i++) {
-                outprintf("%.4f ", atan2(my_ptr[i*2], my_ptr[(i*2)+1]));
+                printf("%.4f ", atan2(my_ptr[i*2], my_ptr[(i*2)+1]));
             }
-    outprintf("]");
+    printf("]");
 #endif
-    outprintf("\n");
-    sd_flush();
+    printf("\n");
+    // sd_flush();
     vTaskDelay(0);
 }
 
 void _print_csi_csv_header() {
     char *header_str = "type,role,mac,rssi,rate,sig_mode,mcs,bandwidth,smoothing,not_sounding,aggregation,stbc,fec_coding,sgi,noise_floor,ampdu_cnt,channel,secondary_channel,local_timestamp,ant,sig_len,rx_state,real_time_set,real_timestamp,len,CSI_DATA\n";
-    outprintf(header_str);
+    printf(header_str);
 }
 
 void csi_init(char *type) {

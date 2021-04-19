@@ -26,7 +26,7 @@
 #include "addr_from_stdin.h"
 
 #if defined(CONFIG_EXAMPLE_IPV4)
-#define HOST_IP_ADDR CONFIG_EXAMPLE_IPV4_ADDR
+#define HOST_IP_ADDR CONFIG_EXAMPLE_IPV4_ADDR // this is set to 192.168.4.1, i.e. the soft-ap
 #elif defined(CONFIG_EXAMPLE_IPV6)
 #define HOST_IP_ADDR CONFIG_EXAMPLE_IPV6_ADDR
 #else
@@ -84,25 +84,26 @@ static void udp_client_task(void *pvParameters)
             }
             ESP_LOGI(TAG, "Message sent");
 
-            struct sockaddr_in source_addr; // Large enough for both IPv4 or IPv6
-            socklen_t socklen = sizeof(source_addr);
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
+            // For now, we do not need clients to recv any data.
+            // struct sockaddr_in source_addr; // Large enough for both IPv4 or IPv6
+            // socklen_t socklen = sizeof(source_addr);
+            // int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
 
-            // Error occurred during receiving
-            if (len < 0) {
-                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-                break;
-            }
-            // Data received
-            else {
-                rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
-                ESP_LOGI(TAG, "Received %d bytes from %s:", len, host_ip);
-                ESP_LOGI(TAG, "%s", rx_buffer);
-                if (strncmp(rx_buffer, "OK: ", 4) == 0) {
-                    ESP_LOGI(TAG, "Received expected message, reconnecting");
-                    break;
-                }
-            }
+            // // Error occurred during receiving
+            // if (len < 0) {
+            //     ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+            //     break;
+            // }
+            // // Data received
+            // else {
+            //     rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
+            //     ESP_LOGI(TAG, "Received %d bytes from %s:", len, host_ip);
+            //     ESP_LOGI(TAG, "%s", rx_buffer);
+            //     if (strncmp(rx_buffer, "OK: ", 4) == 0) {
+            //         ESP_LOGI(TAG, "Received expected message, reconnecting");
+            //         break;
+            //     }
+            // }
 
             vTaskDelay(2000 / portTICK_PERIOD_MS);
         }
