@@ -11,11 +11,12 @@
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "lwip/sockets.h"
 
 // #include "../../_components/nvs_component.h"
 // #include "../../_components/sd_component.h"
 #include "../../_components/csi_component.h"
-#include "../../_components/time_component.h"
+// #include "../../_components/time_component.h"
 // #include "../../_components/input_component.h"
 // #include "../../_components/sockets_component.h"
 
@@ -31,7 +32,9 @@
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
 #define EXAMPLE_MAX_STA_CONN       16
 
-#define CSI_QUEUE_SIZE             16
+#define CSI_QUEUE_SIZE             10
+#define HOST_IP_ADDR               "192.168.4.101" // the ip addr of the host computer.
+#define HOST_UDP_PORT              8848
 
 // TODO: a wrapper for csi info?
 // typedef struct {
@@ -105,6 +108,7 @@ void wifi_init_softap(void)
 }
 
 void wifi_csi_cb(void *ctx, wifi_csi_info_t *data);
+void parse_csi (wifi_csi_info_t *data, char* payload);
 
 void app_main() {
     //Initialize NVS
@@ -178,88 +182,135 @@ void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
         ESP_LOGW(TAG, "Send entry to queue fail");
         free(local_csi_info.buf);
     }
+    ESP_LOGI(TAG, "CSI info pushed to queue");
 
+}
+
+
+int setup_udp_socket (struct sockaddr_in *dest_addr) {
+    int addr_family = 0;
+    int ip_protocol = 0;
+
+    dest_addr->sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+    dest_addr->sin_family = AF_INET;
+    dest_addr->sin_port = htons(HOST_UDP_PORT);
+    addr_family = AF_INET;
+    ip_protocol = IPPROTO_IP;
+
+    int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+        return sock;
+    }
+    ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, HOST_UDP_PORT);
+    return sock;
 }
 
 
 static void csi_handler_task(void *pvParameter) {
     wifi_csi_info_t local_csi;
+    struct sockaddr_in dest_addr;
+    char* payload;
+    int sock;
+    sock = setup_udp_socket(&dest_addr);
+    
     // we use a max delay. so we keep waiting for new entry.
     while (xQueueReceive(csi_info_queue, &local_csi, portMAX_DELAY) == pdTRUE) {
         ESP_LOGI(TAG, "New CSI Info Recv!");
         // TODO: send a udp packet to host computer.
+        payload = malloc(2048); // TODO: is this enough?
+        memset(payload, 0, 2048);
+
+        // test data
+        // sprintf(payload, "test data msg ...");
+        parse_csi(&local_csi, payload);
+
+        // send out udp packet
+        ESP_LOGI(TAG, "payload len = %d", strlen(payload));
+        // int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        // if (err < 0) {
+        //     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+        //     vTaskDelay(2000  / portTICK_PERIOD_MS);
+        //     continue;
+        // }
+
+        free(payload);
+        ESP_LOGI(TAG, "CSI message sent");
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+
+        // data must be freed !!!
+        free(local_csi.buf);
     }
     ESP_LOGI(TAG, "CSI Queue Time out!");
+    vTaskDelete(NULL);
 }
 
-void print_csi (wifi_csi_info_t *data, char* payload) {
+
+void parse_csi (wifi_csi_info_t *data, char* payload) {
     wifi_csi_info_t d = *data;
     char mac[20] = {0};
 
     // data description
-    sprintf(payload, "CSI_DATA from Soft-AP\n");
+    sprintf(payload + strlen(payload), "CSI_DATA from Soft-AP\n");
     sprintf(mac, "%02x:%02x:%02x:%02x:%02x:%02x", d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
     // src mac addr
-    sprintf(payload, "%s\n", mac);
+    sprintf(payload + strlen(payload), "%s\n", mac);
 
     // https://github.com/espressif/esp-idf/blob/9d0ca60398481a44861542638cfdc1949bb6f312/components/esp_wifi/include/esp_wifi_types.h#L314
     // rx_ctrl info
-    sprintf(payload, "%d,", d.rx_ctrl.rssi);
-    sprintf(payload, "%d,", d.rx_ctrl.rate);
-    sprintf(payload, "%d,", d.rx_ctrl.sig_mode);
-    sprintf(payload, "%d,", d.rx_ctrl.mcs);
-    sprintf(payload, "%d,", d.rx_ctrl.cwb);
-    sprintf(payload, "%d,", d.rx_ctrl.smoothing);
-    sprintf(payload, "%d,", d.rx_ctrl.not_sounding);
-    sprintf(payload, "%d,", d.rx_ctrl.aggregation);
-    sprintf(payload, "%d,", d.rx_ctrl.stbc);
-    sprintf(payload, "%d,", d.rx_ctrl.fec_coding);
-    sprintf(payload, "%d,", d.rx_ctrl.sgi);
-    sprintf(payload, "%d,", d.rx_ctrl.noise_floor);
-    sprintf(payload, "%d,", d.rx_ctrl.ampdu_cnt);
-    sprintf(payload, "%d,", d.rx_ctrl.channel);
-    sprintf(payload, "%d,", d.rx_ctrl.secondary_channel);
-    sprintf(payload, "%d,", d.rx_ctrl.timestamp);
-    sprintf(payload, "%d,", d.rx_ctrl.ant);
-    sprintf(payload, "%d,", d.rx_ctrl.sig_len);
-    sprintf(payload, "%d,\n", d.rx_ctrl.rx_state);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.rssi);      /**< Received Signal Strength Indicator(RSSI) of packet. unit: dBm */
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.rate);      /**< PHY rate encoding of the packet. Only valid for non HT(11bg) packet */
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.sig_mode);  /**< 0: non HT(11bg) packet; 1: HT(11n) packet; 3: VHT(11ac) packet */
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.mcs);       /**< Modulation Coding Scheme. If is HT(11n) packet, shows the modulation, range from 0 to 76(MSC0 ~ MCS76) */
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.cwb);       /**< Channel Bandwidth of the packet. 0: 20MHz; 1: 40MHz */
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.smoothing);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.not_sounding);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.aggregation);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.stbc);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.fec_coding);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.sgi);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.noise_floor);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.ampdu_cnt);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.channel);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.secondary_channel);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.timestamp);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.ant);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.sig_len);
+    sprintf(payload + strlen(payload), "%d,\n", d.rx_ctrl.rx_state);
     // new line
 
-    char *resp = time_string_get();
-    printf("%d,", real_time_set);
-    printf("%s,", resp);
-    free(resp);
+    // show some info on monitor
+    ESP_LOGI(TAG, "CSI from %s, buf_len = %d, rssi = %d, rate = %d, sig_mode = %d, mcs = %d, cwb = %d", \
+                    mac, d.len, d.rx_ctrl.rssi, d.rx_ctrl.rate, d.rx_ctrl.sig_mode, d.rx_ctrl.mcs, d.rx_ctrl.cwb);
 
     int8_t *my_ptr;
 
 #if CSI_RAW
-    printf("%d,[", data->len);
+    sprintf(payload + strlen(payload), "RAW, len = %d\n", data->len);
     my_ptr = data->buf;
 
-    for (int i = 0; i < 128; i++) {
-        printf("%d ", my_ptr[i]);
+    for (int i = 0; i < data->len; i++) {
+        sprintf(payload + strlen(payload), "%d, ", my_ptr[i]);
     }
-    printf("]");
+    sprintf(payload + strlen(payload), "\n"); // new line
 #endif
 #if CSI_AMPLITUDE
-    printf("%d,[", data->len);
+    sprintf(payload + strlen(payload), "AMP len = %d \n", data->len/2);
     my_ptr = data->buf;
 
-    for (int i = 0; i < 64; i++) {
-        printf("%.4f ", sqrt(pow(my_ptr[i * 2], 2) + pow(my_ptr[(i * 2) + 1], 2)));
+    for (int i = 0; i < data->len/2; i++) {
+        sprintf(payload + strlen(payload), "%.4f, ", sqrt(pow(my_ptr[i * 2], 2) + pow(my_ptr[(i * 2) + 1], 2)));
     }
-    printf("]");
+    sprintf(payload + strlen(payload), "\n");
 #endif
 #if CSI_PHASE
-    printf("%d,[", data->len);
+    sprintf(payload + strlen(payload), "PHASE len = %d \n", data->len/2);
     my_ptr = data->buf;
 
-    for (int i = 0; i < 64; i++) {
-                printf("%.4f ", atan2(my_ptr[i*2], my_ptr[(i*2)+1]));
-            }
-    printf("]");
+    for (int i = 0; i < data->len/2; i++) {
+        sprintf(payload + strlen(payload), "%.4f, ", atan2(my_ptr[i*2], my_ptr[(i*2)+1]));
+    }
+    sprintf(payload + strlen(payload), "\n");
 #endif
-    printf("\n");
-    // sd_flush();
     vTaskDelay(0);
 }
