@@ -12,6 +12,6 @@ Improvements:
 Steps:
 
 1. turn on soft ap
-2. connect host computer, set ip addr to xxx.101
+2. connect host computer to soft-ap, dhcp should work.
    This has to be done first to set up routing, otherwise, the ap does not know where to send the data and crashes.
 3. set up all the stations.
