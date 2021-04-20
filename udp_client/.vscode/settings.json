@@ -4,6 +4,7 @@
   "idf.flashType": "UART",
   "files.associations": {
     "*.ipp": "c",
-    "sockets.h": "c"
+    "sockets.h": "c",
+    "cerrno": "c"
   }
 }

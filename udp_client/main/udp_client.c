@@ -80,6 +80,7 @@ static void udp_client_task(void *pvParameters)
             int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             if (err < 0) {
                 ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                vTaskDelay(2000 / portTICK_PERIOD_MS);
                 break;
             }
             ESP_LOGI(TAG, "Message sent");

@@ -8,3 +8,10 @@ Improvements:
 
 1. use a separate task to handel data.
 2. send back using udp instead of sd card.
+
+Steps:
+
+1. turn on soft ap
+2. connect host computer, set ip addr to xxx.101
+   This has to be done first to set up routing, otherwise, the ap does not know where to send the data and crashes.
+3. set up all the stations.
