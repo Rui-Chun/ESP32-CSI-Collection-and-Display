@@ -86,7 +86,7 @@ void _print_csi_csv_header() {
     printf(header_str);
 }
 
-void csi_init(char *type) {
+void csi_init(char *type, wifi_csi_cb_t cb_func_ptr) {
     project_type = type;
 
     ESP_ERROR_CHECK(esp_wifi_set_csi(1));
@@ -101,7 +101,12 @@ void csi_init(char *type) {
     configuration_csi.manu_scale = 0;
 
     ESP_ERROR_CHECK(esp_wifi_set_csi_config(&configuration_csi));
-    ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(&_wifi_csi_cb, NULL));
+    if ( (void*)cb_func_ptr == NULL ) {
+        // default callback, works but not optimal
+        ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(&_wifi_csi_cb, NULL));
+    } else {
+        ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(cb_func_ptr, NULL));
+    }
 
     _print_csi_csv_header();
 }
