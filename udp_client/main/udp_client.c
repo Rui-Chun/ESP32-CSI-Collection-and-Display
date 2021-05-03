@@ -106,7 +106,8 @@ static void udp_client_task(void *pvParameters)
             //     }
             // }
 
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            // 100 ms to provide 10 frames per second
+            vTaskDelay(100 / portTICK_PERIOD_MS);
         }
 
         if (sock != -1) {

@@ -4,7 +4,9 @@
     "files.associations": {
         "sockets_component.h": "c",
         "input_component.h": "c",
-        "time_component.h": "c"
+        "time_component.h": "c",
+        "*.ipp": "cpp",
+        "cstring": "cpp"
     },
     "idf.adapterTargetName": "esp32",
     "idf.openOcdConfigs": [

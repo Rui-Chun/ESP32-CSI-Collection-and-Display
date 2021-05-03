@@ -159,6 +159,10 @@ void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
         ESP_LOGI(TAG, "Non-peer node csi filtered.");
         return;
     }
+    if (data->rx_ctrl.sig_mode == 0) {
+        ESP_LOGI(TAG, "Non-HT packet csi filtered.");
+        return; 
+    }
 
     // This callback pushs a csi entry to the queue.
     wifi_csi_info_t local_csi_info;
@@ -253,10 +257,11 @@ void parse_csi (wifi_csi_info_t *data, char* payload) {
     sprintf(payload + strlen(payload), "CSI_DATA from Soft-AP\n");
     sprintf(mac, "%02x:%02x:%02x:%02x:%02x:%02x", d.mac[0], d.mac[1], d.mac[2], d.mac[3], d.mac[4], d.mac[5]);
     // src mac addr
-    sprintf(payload + strlen(payload), "%s\n", mac);
+    sprintf(payload + strlen(payload), "src mac = %s\n", mac);
 
     // https://github.com/espressif/esp-idf/blob/9d0ca60398481a44861542638cfdc1949bb6f312/components/esp_wifi/include/esp_wifi_types.h#L314
     // rx_ctrl info
+    sprintf(payload + strlen(payload), "rx_ctrl info, len = %d\n", 19);
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.rssi);      /**< Received Signal Strength Indicator(RSSI) of packet. unit: dBm */
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.rate);      /**< PHY rate encoding of the packet. Only valid for non HT(11bg) packet */
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.sig_mode);  /**< 0: non HT(11bg) packet; 1: HT(11n) packet; 3: VHT(11ac) packet */
@@ -268,7 +273,7 @@ void parse_csi (wifi_csi_info_t *data, char* payload) {
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.stbc);
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.fec_coding);
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.sgi);
-    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.noise_floor);
+    sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.noise_floor); /**< noise floor of Radio Frequency Module(RF). unit: 0.25dBm*/
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.ampdu_cnt);
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.channel);
     sprintf(payload + strlen(payload), "%d,", d.rx_ctrl.secondary_channel);
@@ -289,7 +294,7 @@ void parse_csi (wifi_csi_info_t *data, char* payload) {
     my_ptr = data->buf;
 
     for (int i = 0; i < data->len; i++) {
-        sprintf(payload + strlen(payload), "%d, ", my_ptr[i]);
+        sprintf(payload + strlen(payload), "%d,", my_ptr[i]);
     }
     sprintf(payload + strlen(payload), "\n"); // new line
 #endif
