@@ -47,11 +47,12 @@ static const char *TAG = "CSI collection (AP)";
 
 static xQueueHandle csi_info_queue;
 
-static const uint8_t PEER_NODE_NUM = 2; // self is also included.
+static const uint8_t PEER_NODE_NUM = 4; // self is also included.
 static const char peer_mac_list[8][20] = {
     "3c:61:05:4c:36:cd", // esp32 official dev board 0, as soft ap
     "3c:61:05:4c:3c:28", // esp32 official dev board 1
-    "",
+    "08:3a:f2:6c:d3:bc", // esp32 unofficial dev board 0
+    "08:3a:f2:6e:05:94", // esp32 unofficial dev board 1
 };
 
 static void csi_handler_task(void *pvParameter);
