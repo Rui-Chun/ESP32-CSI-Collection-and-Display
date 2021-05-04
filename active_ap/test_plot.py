@@ -10,28 +10,30 @@ class App(QtGui.QMainWindow):
         super(App, self).__init__(parent)
 
         #### Create Gui Elements ###########
-        self.mainbox = QtGui.QWidget()
+        self.mainbox = pg.LayoutWidget()
         self.setCentralWidget(self.mainbox)
-        self.mainbox.setLayout(QtGui.QVBoxLayout())
 
-        self.canvas = pg.GraphicsLayoutWidget()
-        self.mainbox.layout().addWidget(self.canvas)
+        self.pw1 = pg.PlotWidget(name="Plot1")
+        self.plot1 = self.pw1.plot()
+        self.mainbox.addWidget(self.pw1, row=0, col=0)
+
+        self.pw2 = pg.PlotWidget(name="Plot2")
+        self.plot2 = self.pw2.plot()
+        self.mainbox.addWidget(self.pw2, row=0, col=1)
+
+        self.info_panel = pg.GraphicsLayoutWidget()
+        self.mainbox.addWidget(self.info_panel, row=0, col=2)
 
         self.label = QtGui.QLabel()
-        self.mainbox.layout().addWidget(self.label)
+        self.mainbox.addWidget(self.label, row=1, col=0)
 
-        self.view = self.canvas.addViewBox()
+        self.view = self.info_panel.addViewBox()
         self.view.setAspectLocked(True)
         self.view.setRange(QtCore.QRectF(0,0, 100, 100))
 
         #  image plot
         self.img = pg.ImageItem(border='w')
         self.view.addItem(self.img)
-
-        self.canvas.nextRow()
-        #  line plot
-        self.otherplot = self.canvas.addPlot()
-        self.h2 = self.otherplot.plot(pen='y')
 
 
         #### Set Data  #####################
@@ -52,7 +54,7 @@ class App(QtGui.QMainWindow):
         self.ydata = np.sin(self.x/3.+ self.counter/9.)
 
         self.img.setImage(self.data)
-        self.h2.setData(self.ydata)
+        self.plot1.setData(self.ydata)
 
         now = time.time()
         dt = (now-self.lastupdate)
