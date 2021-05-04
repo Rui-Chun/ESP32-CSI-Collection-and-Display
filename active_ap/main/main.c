@@ -32,7 +32,7 @@
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
 #define EXAMPLE_MAX_STA_CONN       16
 
-#define CSI_QUEUE_SIZE             10
+#define CSI_QUEUE_SIZE             32
 #define HOST_IP_ADDR               "192.168.4.2" // the ip addr of the host computer.
 #define HOST_UDP_PORT              8848
 
