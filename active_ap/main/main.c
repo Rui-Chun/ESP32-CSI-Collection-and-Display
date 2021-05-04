@@ -159,6 +159,7 @@ void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
         ESP_LOGI(TAG, "Non-peer node csi filtered.");
         return;
     }
+    // also need to drop non-HT packets to prevent queue from overflowing
     if (data->rx_ctrl.sig_mode == 0) {
         ESP_LOGI(TAG, "Non-HT packet csi filtered.");
         return; 

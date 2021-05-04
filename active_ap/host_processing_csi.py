@@ -8,6 +8,7 @@ UDP_PORT = 8848
 
 QUEUE_LEN = 50
 CSI_LEN = 57 * 2
+DISP_FRAME_RATE = 10 # 10 frames per second
 
 def parse_data_line (line, data_len) :
     data = line.split(",") # separate by commas
@@ -46,7 +47,7 @@ def parse_data_packet (data) :
 # change to numpy array as well
 def cook_csi_data (rx_ctrl_info, raw_csi_data) :
     rssi = rx_ctrl_info[0]  # dbm
-    noise_floor = rx_ctrl_info[11] * 0.25 # dbm, raw unit is 0.25 dbm
+    noise_floor = rx_ctrl_info[11] # dbm. The document says unit is 0.25 dbm but it does not make sense.
     # do not know AGC
 
     # Each channel frequency response of sub-carrier is recorded by two bytes of signed characters. 
@@ -54,19 +55,20 @@ def cook_csi_data (rx_ctrl_info, raw_csi_data) :
     raw_csi_data = [ (raw_csi_data[2*i] * 1j + raw_csi_data[2*i + 1]) for i in range(int(len(raw_csi_data) / 2)) ]
     raw_csi_array = np.array(raw_csi_data)    
 
-    ## Note:this part is commented to avoid computing SNR and scaling CSI
+    ## Note:this part of SNR computation may not be accurate.
     #       The reason is that ESP32 may not provide a accurate noise floor value.
-    #       SNR sometimes is lower than 0 dB which is not possible. 
     #       The underlying reason could tha AGC is not calculated explicitly 
-    #       so ESP32 doc just consider noise * 0.25 dbm as a reasonable value.
+    #       so ESP32 doc just consider noise * 0.25 dbm as a estimated value. (described in the official doc)
+    #       But here I will jut use the noise value in rx_ctrl info times 1 dbm as the noise floor.
     # scale csi
-    # snr_db = rssi - noise_floor # dB
-    # snr_abs = 10**(snr_db / 10.0) # from db back to normal
-    # csi_sum = np.sum(np.abs(raw_csi_array)**2)
-    # num_subcarrier = len(raw_csi_array)
-    # scale = np.sqrt((snr_abs / csi_sum) * num_subcarrier)
-    # raw_csi_array = raw_csi_array * scale
-    ##
+    snr_db = rssi - noise_floor # dB
+    snr_abs = 10**(snr_db / 10.0) # from db back to normal
+    csi_sum = np.sum(np.abs(raw_csi_array)**2)
+    num_subcarrier = len(raw_csi_array)
+    scale = np.sqrt((snr_abs / csi_sum) * num_subcarrier)
+    raw_csi_array = raw_csi_array * scale
+    print("SNR = {} dB".format(snr_db))
+    #
 
     # TODO: delete pilot subcarriers
     # Note:
@@ -80,10 +82,10 @@ def cook_csi_data (rx_ctrl_info, raw_csi_data) :
     cooked_csi_array = raw_csi_array[64:]
     # rearrange to -58 ~ -2 and 2 ~ 58.
     cooked_csi_array = np.concatenate((cooked_csi_array[-58:-1], cooked_csi_array[2:59]))
-    assert(len(cooked_csi_array) == 57 * 2)
+    assert(len(cooked_csi_array) == CSI_LEN)
     
     print("RSSI = {} dBm\n".format(rssi))
-    return (rssi, cooked_csi_array)
+    return (snr_db, cooked_csi_array)
 
 
 if __name__ == "__main__":
@@ -98,13 +100,20 @@ if __name__ == "__main__":
 
     # animated=True tells matplotlib to only draw the artist when we
     # explicitly request it
-    (curve_rssi,) = ax_rssi.plot(rssi_que, animated=True)
-    ax_rssi.set_ylim(-70, -20)
-    scatter_rssi = ax_rssi.scatter( len(rssi_que)-1, rssi_que[-1], animated=True)
-    text_rssi = ax_rssi.text( len(rssi_que)-1, rssi_que[-1]+2, "{} dB".format(rssi_que[-1]), animated=True)
+    disp_time = np.array([ (x - QUEUE_LEN + 1)/ DISP_FRAME_RATE for x in range(QUEUE_LEN)])
+    (curve_rssi,) = ax_rssi.plot(disp_time, rssi_que, animated=True)
+    ax_rssi.set_ylim(10, 50)
+    scatter_rssi = ax_rssi.scatter( disp_time[-1], rssi_que[-1], animated=True)
+    text_rssi = ax_rssi.text( disp_time[-2], rssi_que[-1]+2, "{} dB".format(rssi_que[-1]), animated=True)
+    ax_rssi.set_xlabel("Time (s)")
+    ax_rssi.set_ylabel("SNR (dB)")
+
 
     (curve_csi,) = ax_csi.plot(csi_points, animated=True)
-    ax_csi.set_ylim(0, 50)
+    ax_csi.set_ylim(10, 50)
+    ax_csi.set_xlim(0, CSI_LEN)
+    ax_csi.set_xlabel("subcarriers [-58, -2] and [2, 58] ")
+    ax_csi.set_ylabel("CSI (dB)")
 
     # make sure the window is raised, but the script keeps going
     plt.show(block=False)
@@ -145,8 +154,8 @@ if __name__ == "__main__":
         fig.canvas.restore_region(bg)
         # 2. update artist class instances
         curve_rssi.set_ydata(rssi_que)
-        scatter_rssi.set_offsets( (len(rssi_que)-1 , rssi_que[-1]) )
-        text_rssi.set_position( (len(rssi_que)-1, rssi_que[-1]+2) )
+        scatter_rssi.set_offsets( (disp_time[-1] , rssi_que[-1]) )
+        text_rssi.set_position( (disp_time[-1], rssi_que[-1]+2) )
         text_rssi.set_text("{} dB".format(rssi_que[-1]) )
         curve_csi.set_ydata(csi_points)
         # 3. draw
