@@ -2,6 +2,7 @@ import socket
 import numpy as np
 import collections
 import matplotlib.pyplot as plt
+import time
 
 UDP_IP = "192.168.4.2"
 UDP_PORT = 8848
@@ -18,8 +19,6 @@ curve_rssi_list = []
 scatter_rssi_list = []
 text_rssi_list = []
 curve_csi_list = []
-
-bg_cache_list = [x for x in range(10)]
 
 def parse_data_line (line, data_len) :
     data = line.split(",") # separate by commas
@@ -125,20 +124,10 @@ def cook_csi_data (rx_ctrl_info, raw_csi_data) :
     print("RSSI = {} dBm\n".format(rssi))
     return (snr_db, cooked_csi_array)
 
-
-if __name__ == "__main__":
-    # a queue to hold SNR values
-    rssi_que_list = [collections.deque(np.zeros(QUEUE_LEN))]
-    csi_points_list = [np.ones(CSI_LEN)]
-
-    # create plot figure
-    fig = plt.figure(figsize=(12,6))
-    ax_rssi = plt.subplot(121)
-    ax_csi = plt.subplot(122)
-
+# prepare plot
+def preapre_fig ():
     # animated=True tells matplotlib to only draw the artist when we
     # explicitly request it
-    disp_time = np.array([ (x - QUEUE_LEN + 1)/ DISP_FRAME_RATE for x in range(QUEUE_LEN)])
     ax_rssi.set_ylim(10, 50)
     (curve_rssi,) = ax_rssi.plot(disp_time, rssi_que_list[0], animated=True)
     curve_rssi_list.append(curve_rssi)
@@ -161,6 +150,21 @@ if __name__ == "__main__":
     plt.show(block=False)
     plt.pause(0.1) # stop to render backgroud
 
+
+if __name__ == "__main__":
+    # a queue to hold SNR values
+    rssi_que_list = [collections.deque(np.zeros(QUEUE_LEN))]
+    csi_points_list = [np.ones(CSI_LEN)]
+
+    # create plot figure
+    fig = plt.figure(figsize=(12,6))
+    ax_rssi = plt.subplot(121)
+    ax_csi = plt.subplot(122)
+
+    # prepare fig
+    disp_time = np.array([ (x - QUEUE_LEN + 1)/ DISP_FRAME_RATE for x in range(QUEUE_LEN)])
+    preapre_fig()
+
     # get clean backgroud
     bg_clean = fig.canvas.copy_from_bbox(fig.bbox)
 
@@ -169,6 +173,10 @@ if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET, # Internet
                         socket.SOCK_DGRAM) # UDP
     sock.bind((UDP_IP, UDP_PORT))
+
+    # record start time
+    t_start = time.time()
+    frame_count = 0
 
     while True:
         # recv UDP packet
@@ -196,10 +204,7 @@ if __name__ == "__main__":
 
         # plot rssi and CSI
         # 1. restore background
-        if node_id == 0:
-            fig.canvas.restore_region(bg_clean)
-        else:
-            fig.canvas.restore_region(bg_cache_list[node_id-1])
+        fig.canvas.restore_region(bg_clean)
         # 2. update artist class instances
         curve_rssi = curve_rssi_list[node_id]
         rssi_que = rssi_que_list[node_id]
@@ -213,23 +218,24 @@ if __name__ == "__main__":
 
         curve_csi_list[node_id].set_ydata(csi_points_list[node_id])
         # 3. draw
-        for n in range(node_id, len(node_mac_list)):
+        for n in range(len(node_mac_list)):
             ax_rssi.draw_artist(curve_rssi_list[n])
             ax_rssi.draw_artist(scatter_rssi_list[n])
             ax_rssi.draw_artist(text_rssi_list[n])
             ax_csi.draw_artist(curve_csi_list[n])
-            if n == node_id:
-                bg_cache_list[node_id] = ( fig.canvas.copy_from_bbox(fig.bbox) )
-
-
 
         # copy the image to the GUI state, but screen might not be changed yet
         fig.canvas.blit(fig.bbox)
         # flush any pending GUI events, re-painting the screen if needed
-        fig.canvas.flush_events()
+        # fig.canvas.flush_events()
         
         # you can put a pause in if you want to slow things down
-        plt.pause(0.01)
+        plt.pause(0.00001)
+
+        # matplotlib is very slow ... Could be the reason of MacOS
+        # only 15 fps on my macbook
+        frame_count += 1
+        print('Mean Frame Rate: {fps:.3f}FPS '.format(fps= (frame_count / (time.time() - t_start)) ) )
     
 
 
