@@ -43,8 +43,6 @@ def add_new_node (pyqt_app, node_id):
     curve_csi_list.append( pyqt_app.pw2.plot(pen=(node_id, 3)) ) # append SNR curve
 
 
-    
-
 def parse_data_packet (pyqt_app, data) :
     data_str = str(data, encoding="ascii")
     lines = data_str.splitlines()
@@ -161,8 +159,9 @@ class App(QtGui.QMainWindow):
         self.mainbox = pg.LayoutWidget()
         self.setCentralWidget(self.mainbox)
 
+        # time domain for plot 1
         self.disp_time = np.array([ (x - QUEUE_LEN + 1)/ DISP_FRAME_RATE for x in range(QUEUE_LEN)])
-
+        # set up Plot 1 widget
         self.pw1 = pg.PlotWidget(name="Plot1")
         curve_rssi_list.append( self.pw1.plot(pen=(0, 3)) ) # append SNR curve
         self.mainbox.addWidget(self.pw1, row=0, col=0)
@@ -170,6 +169,7 @@ class App(QtGui.QMainWindow):
         self.pw1.setLabel('bottom', 'Time ', units=None)
         self.pw1.setYRange(0, 50)
 
+        # set up Plot 2 widget
         self.pw2 = pg.PlotWidget(name="Plot2")
         curve_csi_list.append( self.pw2.plot(pen=(0, 3)) ) # append CSI curve
         self.mainbox.addWidget(self.pw2, row=0, col=1)
@@ -178,20 +178,20 @@ class App(QtGui.QMainWindow):
         self.pw2.setXRange(0, CSI_LEN)
         self.pw2.setYRange(0, 50)
 
-        self.info_panel = pg.GraphicsLayoutWidget()
-        self.mainbox.addWidget(self.info_panel, row=0, col=2)
-
-        self.label = QtGui.QLabel()
-        self.mainbox.addWidget(self.label, row=1, col=0)
-
-        self.view = self.info_panel.addViewBox()
+        # set up image widget
+        self.img_w = pg.GraphicsLayoutWidget()
+        self.mainbox.addWidget(self.img_w, row=0, col=2)
+        # image view box
+        self.view = self.img_w.addViewBox()
         self.view.setAspectLocked(True)
         self.view.setRange(QtCore.QRectF(0,0, 100, 100))
-
         #  image plot
         self.img = pg.ImageItem(border='w')
         self.view.addItem(self.img)
 
+        # a text label widget for info dispaly
+        self.label = QtGui.QLabel()
+        self.mainbox.addWidget(self.label, row=1, col=0)
 
         #### Set Data  #####################
 
@@ -205,17 +205,7 @@ class App(QtGui.QMainWindow):
         #### Start  #####################
         self._update()
 
-    def _update(self):
-
-        node_id = update_esp32_data(self)
-        if node_id >= 0:
-            curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
-            curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
-
-        self.data = np.sin(self.X/3.+self.counter/9.)*np.cos(self.Y/3.+self.counter/9.)
-
-        self.img.setImage(self.data)
-
+    def calculate_fps(self):
         now = time.time()
         dt = (now-self.lastupdate)
         if dt <= 0:
@@ -223,8 +213,28 @@ class App(QtGui.QMainWindow):
         fps2 = 1.0 / dt
         self.lastupdate = now
         self.fps = self.fps * 0.9 + fps2 * 0.1
+
+    def update_label(self):
         tx = 'Mean Frame Rate:  {fps:.3f} FPS'.format(fps=self.fps )
         self.label.setText(tx)
+
+    def update_img(self):
+        self.data = np.sin(self.X/3.+self.counter/9.)*np.cos(self.Y/3.+self.counter/9.)
+        self.img.setImage(self.data)
+
+    def _update(self):
+
+        node_id = update_esp32_data(self)
+        if node_id >= 0:
+            curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
+            curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
+
+        self.update_img()
+
+        self.calculate_fps()
+        self.update_label()
+
+        # schedule the next update call
         QtCore.QTimer.singleShot(1, self._update)
         self.counter += 1
 
