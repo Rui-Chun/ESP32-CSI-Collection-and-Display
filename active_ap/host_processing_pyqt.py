@@ -6,12 +6,19 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 
+import requests
+import PIL.Image
+from io import BytesIO
+
 UDP_IP = "192.168.4.2"
 UDP_PORT = 8848
 
 QUEUE_LEN = 50
 CSI_LEN = 57 * 2
 DISP_FRAME_RATE = 10 # 10 frames per second
+
+CAMERA_IP = "192.168.4.3"
+IMAGE_FRESH_INTERVAL = 1000 # ms
 
 node_mac_list = []
 corlor_list = []
@@ -21,6 +28,7 @@ curve_rssi_list = []
 scatter_rssi_list = []
 text_rssi_list = []
 curve_csi_list = []
+
 
 def parse_data_line (line, data_len) :
     data = line.split(",") # separate by commas
@@ -184,7 +192,7 @@ class App(QtGui.QMainWindow):
         # image view box
         self.view = self.img_w.addViewBox()
         self.view.setAspectLocked(True)
-        self.view.setRange(QtCore.QRectF(0,0, 100, 100))
+        self.view.setRange(QtCore.QRectF(0,0, 800, 600))
         #  image plot
         self.img = pg.ImageItem(border='w')
         self.view.addItem(self.img)
@@ -195,12 +203,12 @@ class App(QtGui.QMainWindow):
 
         #### Set Data  #####################
 
-        self.x = np.linspace(0,50., num=100)
-        self.X,self.Y = np.meshgrid(self.x,self.x)
-
         self.counter = 0
         self.fps = 0.
         self.lastupdate = time.time()
+
+        # bring up camera and stream video
+        self.setup_camera()
 
         #### Start  #####################
         self._update()
@@ -218,9 +226,26 @@ class App(QtGui.QMainWindow):
         tx = 'Mean Frame Rate:  {fps:.3f} FPS'.format(fps=self.fps )
         self.label.setText(tx)
 
+    def setup_camera(self):
+        while True:
+            # set a large frame size
+            cmd = {'var': 'framesize', 'val':"7"}
+            resp = requests.get('http://'+ CAMERA_IP +'/control', params=cmd)
+            if resp.status_code == 200:
+                break
+        # schedule the next update call
+        QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
+
     def update_img(self):
-        self.data = np.sin(self.X/3.+self.counter/9.)*np.cos(self.Y/3.+self.counter/9.)
-        self.img.setImage(self.data)
+        resp = requests.get('http://'+ CAMERA_IP +'/capture')
+        img_capture = PIL.Image.open(BytesIO(resp.content))
+        img_np = np.array(img_capture.rotate(-90))
+
+        # self.data = np.sin(self.X/3.+self.counter/9.)*np.cos(self.Y/3.+self.counter/9.)
+        self.img.setImage(img_np)
+
+        # schedule the next update call
+        QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
 
     def _update(self):
 
@@ -228,8 +253,6 @@ class App(QtGui.QMainWindow):
         if node_id >= 0:
             curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
             curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
-
-        self.update_img()
 
         self.calculate_fps()
         self.update_label()
