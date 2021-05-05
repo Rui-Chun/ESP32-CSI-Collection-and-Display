@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 import socket
 import collections
@@ -9,6 +10,7 @@ from pyqtgraph.Qt import QtCore, QtGui
 import requests
 import PIL.Image
 from io import BytesIO
+import subprocess
 
 UDP_IP = "192.168.4.2"
 UDP_PORT = 8848
@@ -18,9 +20,6 @@ CSI_LEN = 57 * 2
 DISP_FRAME_RATE = 10 # 10 frames per second, this is decided by the packet sender of CSI
 
 PLOT_FRESH_INTERVAL = 20 # ms
-
-CAMERA_IP = "192.168.4.3"
-IMAGE_FRESH_INTERVAL = 1 # ms
 
 node_mac_list = []
 corlor_list = []
@@ -191,16 +190,16 @@ class App(QtGui.QMainWindow):
         self.pw2.setXRange(0, CSI_LEN)
         self.pw2.setYRange(0, 50)
 
-        # set up image widget
-        self.img_w = pg.GraphicsLayoutWidget()
-        self.mainbox.addWidget(self.img_w, row=0, col=2)
-        # image view box
-        self.view = self.img_w.addViewBox()
-        self.view.setAspectLocked(True)
-        self.view.setRange(QtCore.QRectF(0,0, 800, 600))
-        #  image plot
-        self.img = pg.ImageItem(border='w')
-        self.view.addItem(self.img)
+        # # set up image widget
+        # self.img_w = pg.GraphicsLayoutWidget()
+        # self.mainbox.addWidget(self.img_w, row=0, col=2)
+        # # image view box
+        # self.view = self.img_w.addViewBox()
+        # self.view.setAspectLocked(True)
+        # self.view.setRange(QtCore.QRectF(0,0, 800, 600))
+        # #  image plot
+        # self.img = pg.ImageItem(border='w')
+        # self.view.addItem(self.img)
 
         # a text label widget for info dispaly
         self.label = QtGui.QLabel()
@@ -208,12 +207,12 @@ class App(QtGui.QMainWindow):
 
         #### Set Data  #####################
 
-        self.counter = 0
         self.fps = 0.
         self.lastupdate = time.time()
 
         # bring up camera and stream video
-        self.setup_camera()
+        # self.setup_camera()
+        subprocess.Popen(["python3", "camera_streaming.py"])
 
         #### Start  #####################
         self._update()
@@ -231,41 +230,6 @@ class App(QtGui.QMainWindow):
         tx = 'Mean Frame Rate:  {fps:.3f} FPS'.format(fps=self.fps )
         self.label.setText(tx)
 
-    def setup_camera(self):
-        while True:
-            # set a large frame size
-            cmd = {'var': 'framesize', 'val':"7"}
-            resp = requests.get('http://'+ CAMERA_IP +'/control', params=cmd)
-            if resp.status_code == 200:
-                break
-        
-        self.stream_iter = requests.get('http://'+ CAMERA_IP +':81/stream', stream=True).iter_content(chunk_size=1024*1024*8)
-        self.video_buf = bytes()
-        # schedule the next update call
-        QtCore.QTimer.singleShot(1, self.update_img)
-
-    def update_img(self):
-        try:
-            self.video_buf += next(self.stream_iter)
-        except:
-            # schedule the next update call
-            QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
-            return
-        a = self.video_buf.find(b'\xff\xd8')
-        b = self.video_buf.find(b'\xff\xd9')
-
-        if a != -1 and b != -1:
-            chunk_content = self.video_buf[a:b+2]
-            self.video_buf = self.video_buf[b+2:]
-
-            img_capture = PIL.Image.open(BytesIO(chunk_content))
-            img_np = np.array(img_capture.rotate(-90))
-
-            self.img.setImage(img_np)
-
-        # schedule the next update call
-        QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
-
     def _update(self):
 
         node_id = update_esp32_data(self)
@@ -282,7 +246,6 @@ class App(QtGui.QMainWindow):
 
         # schedule the next update call
         QtCore.QTimer.singleShot(PLOT_FRESH_INTERVAL, self._update)
-        self.counter += 1
 
 
 if __name__ == '__main__':
