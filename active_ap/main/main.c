@@ -157,12 +157,12 @@ int is_peer_node (uint8_t mac[6]) {
 void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
     // Done: filtering out packets accroding to mac addr.
     if (!is_peer_node(data->mac)) {
-        ESP_LOGI(TAG, "Non-peer node csi filtered.");
+        // ESP_LOGI(TAG, "Non-peer node csi filtered.");
         return;
     }
     // also need to drop non-HT packets to prevent queue from overflowing
     if (data->rx_ctrl.sig_mode == 0) {
-        ESP_LOGI(TAG, "Non-HT packet csi filtered.");
+        // ESP_LOGI(TAG, "Non-HT packet csi filtered.");
         return; 
     }
 
@@ -222,8 +222,10 @@ static void csi_handler_task(void *pvParameter) {
     
     // we use a max delay. so we keep waiting for new entry.
     while (xQueueReceive(csi_info_queue, &local_csi, portMAX_DELAY) == pdTRUE) {
-        ESP_LOGI(TAG, "New CSI Info Recv!");
-        // TODO: send a udp packet to host computer.
+        // NOTE: Even not connect to a computer, esp32 is still sending serial data of ESP_LOG. 
+        //       so turn them off to speed up.
+        // ESP_LOGI(TAG, "New CSI Info Recv!");
+        // send a udp packet to host computer.
         payload = malloc(2048); // TODO: is this enough?
         memset(payload, 0, 2048);
 
@@ -232,13 +234,12 @@ static void csi_handler_task(void *pvParameter) {
         parse_csi(&local_csi, payload);
 
         // send out udp packet
-        ESP_LOGI(TAG, "payload len = %d", strlen(payload));
         int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         if (err < 0) {
             ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-            vTaskDelay(1000  / portTICK_PERIOD_MS);
+            vTaskDelay(100  / portTICK_PERIOD_MS);
         } else {
-            ESP_LOGI(TAG, "CSI message sent .");
+            ESP_LOGI(TAG, "CSI message sent, payload len = %d", strlen(payload));
         }
 
         // data must be freed !!!
