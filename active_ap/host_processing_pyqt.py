@@ -15,10 +15,12 @@ UDP_PORT = 8848
 
 QUEUE_LEN = 50
 CSI_LEN = 57 * 2
-DISP_FRAME_RATE = 10 # 10 frames per second
+DISP_FRAME_RATE = 10 # 10 frames per second, this is decided by the packet sender of CSI
+
+PLOT_FRESH_INTERVAL = 20 # ms
 
 CAMERA_IP = "192.168.4.3"
-IMAGE_FRESH_INTERVAL = 1000 # ms
+IMAGE_FRESH_INTERVAL = 1 # ms
 
 node_mac_list = []
 corlor_list = []
@@ -133,8 +135,11 @@ def cook_csi_data (rx_ctrl_info, raw_csi_data) :
     return (snr_db, cooked_csi_array)
 
 def update_esp32_data(pyqt_app):
-    # recv UDP packet
-    data, addr = sock.recvfrom(2048) # buffer size is 2048 bytes
+    # recv UDP packet aync!
+    try:
+        data = sock.recv(2048) # buffer size is 2048 bytes
+    except:
+        return -1
 
     # parse data packet to get lists of data
     (rx_ctrl_data, raw_csi_data, node_id) = parse_data_packet(pyqt_app, data)
@@ -233,16 +238,30 @@ class App(QtGui.QMainWindow):
             resp = requests.get('http://'+ CAMERA_IP +'/control', params=cmd)
             if resp.status_code == 200:
                 break
+        
+        self.stream_iter = requests.get('http://'+ CAMERA_IP +':81/stream', stream=True).iter_content(chunk_size=1024*1024*8)
+        self.video_buf = bytes()
         # schedule the next update call
-        QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
+        QtCore.QTimer.singleShot(1, self.update_img)
 
     def update_img(self):
-        resp = requests.get('http://'+ CAMERA_IP +'/capture')
-        img_capture = PIL.Image.open(BytesIO(resp.content))
-        img_np = np.array(img_capture.rotate(-90))
+        try:
+            self.video_buf += next(self.stream_iter)
+        except:
+            # schedule the next update call
+            QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
+            return
+        a = self.video_buf.find(b'\xff\xd8')
+        b = self.video_buf.find(b'\xff\xd9')
 
-        # self.data = np.sin(self.X/3.+self.counter/9.)*np.cos(self.Y/3.+self.counter/9.)
-        self.img.setImage(img_np)
+        if a != -1 and b != -1:
+            chunk_content = self.video_buf[a:b+2]
+            self.video_buf = self.video_buf[b+2:]
+
+            img_capture = PIL.Image.open(BytesIO(chunk_content))
+            img_np = np.array(img_capture.rotate(-90))
+
+            self.img.setImage(img_np)
 
         # schedule the next update call
         QtCore.QTimer.singleShot(IMAGE_FRESH_INTERVAL, self.update_img)
@@ -250,15 +269,19 @@ class App(QtGui.QMainWindow):
     def _update(self):
 
         node_id = update_esp32_data(self)
-        if node_id >= 0:
-            curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
-            curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
+        if node_id < 0:
+            # schedule the next update call
+            QtCore.QTimer.singleShot(PLOT_FRESH_INTERVAL, self._update)
+            return
+
+        curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
+        curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
 
         self.calculate_fps()
         self.update_label()
 
         # schedule the next update call
-        QtCore.QTimer.singleShot(1, self._update)
+        QtCore.QTimer.singleShot(PLOT_FRESH_INTERVAL, self._update)
         self.counter += 1
 
 
@@ -271,6 +294,7 @@ if __name__ == '__main__':
     sock = socket.socket(socket.AF_INET, # Internet
                         socket.SOCK_DGRAM) # UDP
     sock.bind((UDP_IP, UDP_PORT))
+    sock.settimeout(1)
 
     app = QtGui.QApplication(sys.argv)
     thisapp = App()
