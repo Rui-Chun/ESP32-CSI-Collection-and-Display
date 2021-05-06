@@ -10,7 +10,7 @@ import requests
 import PIL.Image
 from io import BytesIO
 
-CAMERA_IP = "192.168.4.3" # can be improved by using mDNS
+CAMERA_IP = "192.168.4.4" # can be improved by using mDNS
 IMAGE_FRESH_INTERVAL = 20 # ms
 
 class App(QtGui.QMainWindow):

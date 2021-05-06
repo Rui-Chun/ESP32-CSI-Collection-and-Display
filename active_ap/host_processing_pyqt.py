@@ -12,7 +12,10 @@ import PIL.Image
 from io import BytesIO
 import subprocess
 
-UDP_IP = "192.168.1.112" # put your computer's ip in WiFi netowrk here
+# whether turn on motion detection and call video streaming
+DETECTION_ON = True
+
+UDP_IP = "192.168.4.2" # put your computer's ip in WiFi netowrk here
 UDP_PORT = 8848
 
 QUEUE_LEN = 50
@@ -30,9 +33,9 @@ scatter_rssi_list = []
 text_rssi_list = []
 curve_csi_list = []
 
-LOG_LEN = 5
+LOG_LEN = 3
 TEST_MIN_NUM = 100
-DIFF_THRESHOLD = 6
+DIFF_THRESHOLD = 3
 TARGET_NODE = 0
 baseline_alpha = 0.95
 test_counter = 0
@@ -66,12 +69,6 @@ def crossing_decction(new_csi_data):
         return True
     else:
         return False
-
-
-    
-
-
-
 
 
 def parse_data_line (line, data_len) :
@@ -228,7 +225,7 @@ class App(QtGui.QMainWindow):
         self.mainbox.addWidget(self.pw1, row=0, col=0)
         self.pw1.setLabel('left', 'SNR', units='dB')
         self.pw1.setLabel('bottom', 'Time ', units=None)
-        self.pw1.setYRange(0, 50)
+        self.pw1.setYRange(20, 70)
 
         # set up Plot 2 widget
         self.pw2 = pg.PlotWidget(name="Plot2")
@@ -238,7 +235,7 @@ class App(QtGui.QMainWindow):
         self.pw2.setLabel('left', 'CSI', units='dB')
         self.pw2.setLabel('bottom', 'subcarriers [-58, -2] and [2, 58] ', units=None)
         self.pw2.setXRange(0, CSI_LEN)
-        self.pw2.setYRange(0, 50)
+        self.pw2.setYRange(20, 70)
 
         # # set up image widget
         # self.img_w = pg.GraphicsLayoutWidget()
@@ -290,12 +287,11 @@ class App(QtGui.QMainWindow):
         curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
         curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
 
-        self.baseline_csi_curve.setData(y=csi_db_baseline, pen=(10, 3))
-
         self.calculate_fps()
         self.update_label()
 
-        if TARGET_NODE == node_id:
+        if DETECTION_ON and TARGET_NODE == node_id:
+            self.baseline_csi_curve.setData(y=csi_db_baseline, pen=(10, 3))
             ret = crossing_decction(csi_points_list[node_id])
             if ret:
                 subprocess.Popen(["python3", "camera_streaming.py"])

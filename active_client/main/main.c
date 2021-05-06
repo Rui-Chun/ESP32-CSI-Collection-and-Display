@@ -31,8 +31,10 @@
  * the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
  */
 #define LEN_MAC_ADDR 20
-#define EXAMPLE_ESP_WIFI_SSID      "StudiosL2F"
-#define EXAMPLE_ESP_WIFI_PASS      "sjb13359133"
+// #define EXAMPLE_ESP_WIFI_SSID      "StudiosL2F"
+// #define EXAMPLE_ESP_WIFI_PASS      "sjb13359133"
+#define EXAMPLE_ESP_WIFI_SSID      "ESP32-AP"
+#define EXAMPLE_ESP_WIFI_PASS      "esp32-ap"
 #define EXAMPLE_ESP_MAXIMUM_RETRY   10
 
 #define CSI_QUEUE_SIZE             32
@@ -190,7 +192,7 @@ esp_err_t ping_start()
     static esp_ping_handle_t ping_handle = NULL;
     esp_ping_config_t ping_config        = {
         .count           = 0,
-        .interval_ms     = 10,
+        .interval_ms     = 100,
         .timeout_ms      = 1000,
         .data_size       = 1,
         .tos             = 0,
@@ -355,7 +357,12 @@ static void csi_handler_task(void *pvParameter) {
         parse_csi(&local_csi, payload);
 
         // send out udp packet
-        int err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        // Note: when the client sends csi info packets to host computer, it will also trigger packets from router.
+        //       This will form a amplifying loop to create many packets. So drop some CSI info packets here.
+        int err = 0;
+        if (strlen(payload) % 4 == 0) {
+            err = sendto(sock, payload, strlen(payload), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        }
         if (err < 0) {
             ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
             vTaskDelay(100  / portTICK_PERIOD_MS);
