@@ -12,7 +12,7 @@ import PIL.Image
 from io import BytesIO
 import subprocess
 
-UDP_IP = "192.168.4.3"
+UDP_IP = "192.168.1.112" # put your computer's ip in WiFi netowrk here
 UDP_PORT = 8848
 
 QUEUE_LEN = 50
@@ -159,7 +159,6 @@ def cook_csi_data (rx_ctrl_info, raw_csi_data) :
     print("SNR = {} dB".format(snr_db))
     #
 
-    # TODO: delete pilot subcarriers
     # Note:
     #   check https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/wifi.html
     #   section 'Wi-Fi Channel State Information' 
@@ -185,10 +184,15 @@ def update_esp32_data(pyqt_app):
 
     # parse data packet to get lists of data
     (rx_ctrl_data, raw_csi_data, node_id) = parse_data_packet(pyqt_app, data)
-    # only process HT(802.11 n) and 40 MHz frames
-    # sig-mod and channel bandwidth fields
-    if rx_ctrl_data[2] != 1 or rx_ctrl_data[4] != 1 :
+
+    # only process HT(802.11 n) and 40 MHz frames without stbc
+    # Check https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi.html#wi-fi-channel-state-information
+    # sig-mod, channel bandwidth, stbc fields 
+    if rx_ctrl_data[2] != 1 or rx_ctrl_data[4] != 1 or rx_ctrl_data[8] != 0:
         return -1
+    # you can support more formats by changing cook_csi_data() function
+    
+
     # node_id not assigned, error
     assert(node_id >= 0)
     print("Got a HT 40MHz packet ...")

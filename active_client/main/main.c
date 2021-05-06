@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "esp_spi_flash.h"
 #include "esp_wifi.h"
@@ -13,6 +14,8 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 #include "lwip/sockets.h"
+#include "ping/ping_sock.h"
+
 
 // #include "../../_components/nvs_component.h"
 // #include "../../_components/sd_component.h"
@@ -28,84 +31,131 @@
  * the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
  */
 #define LEN_MAC_ADDR 20
-#define EXAMPLE_ESP_WIFI_SSID      "ESP32-AP"
-#define EXAMPLE_ESP_WIFI_PASS      "esp32-ap"
-#define EXAMPLE_ESP_WIFI_CHANNEL   1
-#define EXAMPLE_MAX_STA_CONN       16
+#define EXAMPLE_ESP_WIFI_SSID      "StudiosL2F"
+#define EXAMPLE_ESP_WIFI_PASS      "sjb13359133"
+#define EXAMPLE_ESP_MAXIMUM_RETRY   10
 
 #define CSI_QUEUE_SIZE             32
 // #define HOST_IP_ADDR               "192.168.4.2" // the ip addr of the host computer.
-#define TARGET_HOSTNAME            "RuichunMacBook-Pro" // put your computer mDNS name here.
 #define HOST_UDP_PORT              8848
 
 
 
-static const char *TAG = "CSI collection (AP)";
+static const char *TAG = "CSI collection (Client)";
 
 static char *target_host_ipv4 = NULL;
 
 static xQueueHandle csi_info_queue;
 
-static const uint8_t PEER_NODE_NUM = 4; // self is also included.
-static const char peer_mac_list[8][20] = {
-    "3c:61:05:4c:36:cd", // esp32 official dev board 0, as soft ap
-    "3c:61:05:4c:3c:28", // esp32 official dev board 1
-    "08:3a:f2:6c:d3:bc", // esp32 unofficial dev board 0
-    "08:3a:f2:6e:05:94", // esp32 unofficial dev board 1
-};
+/* FreeRTOS event group to signal when we are connected*/
+static EventGroupHandle_t s_wifi_event_group;
+
+/* The event group allows multiple bits for each event, but we only care about two events:
+ * - we are connected to the AP with an IP
+ * - we failed to connect after the maximum amount of retries */
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static int s_retry_num = 0;
 
 static void csi_handler_task(void *pvParameter);
+void wifi_csi_cb(void *ctx, wifi_csi_info_t *data);
+void parse_csi (wifi_csi_info_t *data, char* payload);
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                                    int32_t event_id, void* event_data)
+static void event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
 {
-    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        ESP_LOGI(TAG, "station "MACSTR" join, AID=%d",
-                 MAC2STR(event->mac), event->aid);
-    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        ESP_LOGI(TAG, "station "MACSTR" leave, AID=%d",
-                 MAC2STR(event->mac), event->aid);
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+            esp_wifi_connect();
+            s_retry_num++;
+            ESP_LOGI(TAG, "retry to connect to the AP");
+        } else {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
+        ESP_LOGI(TAG,"connect to the AP fail");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
-void wifi_init_softap(void)
+void wifi_init_sta(void)
 {
+    s_wifi_event_group = xEventGroupCreate();
+
     ESP_ERROR_CHECK(esp_netif_init());
+
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
-                                                        &wifi_event_handler,
+                                                        &event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &event_handler,
+                                                        NULL,
+                                                        &instance_got_ip));
 
     wifi_config_t wifi_config = {
-        .ap = {
+        .sta = {
             .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID),
-            .channel = EXAMPLE_ESP_WIFI_CHANNEL,
             .password = EXAMPLE_ESP_WIFI_PASS,
-            .max_connection = EXAMPLE_MAX_STA_CONN,
-            .authmode = WIFI_AUTH_WPA_WPA2_PSK
+            /* Setting a password implies station will connect to all security modes including WEP/WPA.
+             * However these modes are deprecated and not advisable to be used. Incase your Access point
+             * doesn't support WPA2, these mode can be enabled by commenting below line */
+	     .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+
+            .pmf_cfg = {
+                .capable = true,
+                .required = false
+            },
         },
     };
-    if (strlen(EXAMPLE_ESP_WIFI_PASS) == 0) {
-        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+
+    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
+     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            portMAX_DELAY);
+
+    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
+     * happened. */
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    } else {
+        ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s channel:%d",
-             EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS, EXAMPLE_ESP_WIFI_CHANNEL);
+    /* The event will not be processed after unregister */
+    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip));
+    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id));
+    vEventGroupDelete(s_wifi_event_group);
 }
+
 
 static char* generate_hostname(void)
 {
@@ -135,8 +185,30 @@ static void initialise_mdns(void)
     free(hostname);
 }
 
-void wifi_csi_cb(void *ctx, wifi_csi_info_t *data);
-void parse_csi (wifi_csi_info_t *data, char* payload);
+esp_err_t ping_start()
+{
+    static esp_ping_handle_t ping_handle = NULL;
+    esp_ping_config_t ping_config        = {
+        .count           = 0,
+        .interval_ms     = 10,
+        .timeout_ms      = 1000,
+        .data_size       = 1,
+        .tos             = 0,
+        .task_stack_size = 4096,
+        .task_prio       = 0,
+    };
+
+    esp_netif_ip_info_t local_ip;
+    esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &local_ip);
+    ESP_LOGI(TAG, "got ip:" IPSTR ", gw: " IPSTR, IP2STR(&local_ip.ip), IP2STR(&local_ip.gw));
+    inet_addr_to_ip4addr(ip_2_ip4(&ping_config.target_addr), (struct in_addr *)&local_ip.gw);
+
+    esp_ping_callbacks_t cbs = { 0 };
+    esp_ping_new_session(&ping_config, &cbs, &ping_handle);
+    esp_ping_start(ping_handle);
+
+    return ESP_OK;
+}
 
 void app_main() {
     //Initialize NVS
@@ -148,8 +220,8 @@ void app_main() {
     ESP_ERROR_CHECK(ret);
 
 
-    // init wifi as soft-ap
-    wifi_init_softap();
+    // init wifi as a station
+    wifi_init_sta();
 
     // init queue
     csi_info_queue = xQueueCreate(CSI_QUEUE_SIZE, sizeof(wifi_csi_info_t));
@@ -163,35 +235,20 @@ void app_main() {
     // init mDNS
     initialise_mdns();
 
+    // start ping the gateway
+    ping_start();
 
     // start another task to handle CSI data
     xTaskCreate(csi_handler_task, "csi_handler_task", 4096, NULL, 4, NULL);
 }
 
 
-int is_peer_node (uint8_t mac[6]) {
-    char mac_str[20] = {0};
-    sprintf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    // ESP_LOGI(TAG, "Potential peer mac = %s", mac_str);
-    for (int p = 0; p < PEER_NODE_NUM; p++) {
-        // ESP_LOGI(TAG, "Testing peer mac = %s, ret = %d", peer_mac_list[p], strcmp(mac_str, peer_mac_list[p]));
-        if ( strcmp(mac_str, peer_mac_list[p])==0 )
-            return 1;
-    }
-    return 0;
-}
-
 /* Callback function is called in WiFi task.
  * Users should not do lengthy operations from this task. Instead, post
  * necessary data to a queue and handle it from a lower priority task.
  * According to ESPNOW example. Makes sense. */
 void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
-    // Done: filtering out packets accroding to mac addr.
-    if (!is_peer_node(data->mac)) {
-        // ESP_LOGI(TAG, "Non-peer node csi filtered.");
-        return;
-    }
-    // also need to drop non-HT packets to prevent queue from overflowing
+    // drop non-HT packets to prevent queue from overflowing
     if (data->rx_ctrl.sig_mode == 0) {
         // ESP_LOGI(TAG, "Non-HT packet csi filtered.");
         return; 
@@ -257,7 +314,7 @@ int setup_udp_socket (struct sockaddr_in *dest_addr) {
     int ip_protocol = 0;
 
     if (target_host_ipv4 == NULL) {
-        while ( query_mdns_host(TARGET_HOSTNAME) < 0) {
+        while ( query_mdns_host("RuichunMacBook-Pro") < 0) {
             ESP_LOGW(TAG, "No target host found, try again ...");
         }
     }
@@ -276,7 +333,6 @@ int setup_udp_socket (struct sockaddr_in *dest_addr) {
     ESP_LOGI(TAG, "Socket created, sending to %s:%d", target_host_ipv4, HOST_UDP_PORT);
     return sock;
 }
-
 
 static void csi_handler_task(void *pvParameter) {
     wifi_csi_info_t local_csi;
