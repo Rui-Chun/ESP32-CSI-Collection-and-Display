@@ -12,7 +12,7 @@ import PIL.Image
 from io import BytesIO
 import subprocess
 
-UDP_IP = "192.168.4.2"
+UDP_IP = "192.168.4.3"
 UDP_PORT = 8848
 
 QUEUE_LEN = 50
@@ -29,6 +29,49 @@ curve_rssi_list = []
 scatter_rssi_list = []
 text_rssi_list = []
 curve_csi_list = []
+
+LOG_LEN = 5
+TEST_MIN_NUM = 100
+DIFF_THRESHOLD = 6
+TARGET_NODE = 0
+baseline_alpha = 0.95
+test_counter = 0
+# compute diff, record multiple records, corr, test peak.
+def crossing_decction(new_csi_data):
+    global csi_data_log
+    global csi_db_baseline
+    global test_counter
+
+    test_counter += 1
+    if len(csi_data_log) < LOG_LEN:
+        csi_data_log.append( new_csi_data )
+        return False
+    elif test_counter < TEST_MIN_NUM:
+        csi_data_log.popleft()
+        csi_data_log.append( new_csi_data )
+        # update baseline
+        csi_db_baseline = csi_db_baseline * baseline_alpha + new_csi_data * (1 - baseline_alpha)
+        return False
+    else:
+        csi_data_log.popleft()
+        csi_data_log.append( new_csi_data )
+        # update baseline
+        csi_db_baseline = csi_db_baseline * baseline_alpha + new_csi_data * (1 - baseline_alpha)
+
+    csi_diff = np.zeros(CSI_LEN)
+    for csi in csi_data_log:
+        csi_diff += ( csi - csi_db_baseline ) / LOG_LEN
+    
+    if np.max( np.abs( csi_diff ) ) > DIFF_THRESHOLD:
+        return True
+    else:
+        return False
+
+
+    
+
+
+
 
 
 def parse_data_line (line, data_len) :
@@ -158,7 +201,7 @@ def update_esp32_data(pyqt_app):
     rssi_que_list[node_id].popleft()
     rssi_que_list[node_id].append( rssi )
     # update CSI
-    csi_points_list[node_id] = 10 * np.log10(np.abs(csi_data)**2)
+    csi_points_list[node_id] = 10 * np.log10(np.abs(csi_data)**2 + 0.1) # + 0.1 to avoid log(0)
 
     return node_id
 
@@ -166,6 +209,8 @@ def update_esp32_data(pyqt_app):
 class App(QtGui.QMainWindow):
     def __init__(self, parent=None):
         super(App, self).__init__(parent)
+
+        global csi_db_baseline
 
         #### Create Gui Elements ###########
         self.mainbox = pg.LayoutWidget()
@@ -184,6 +229,7 @@ class App(QtGui.QMainWindow):
         # set up Plot 2 widget
         self.pw2 = pg.PlotWidget(name="Plot2")
         curve_csi_list.append( self.pw2.plot(pen=(0, 3)) ) # append CSI curve
+        self.baseline_csi_curve = self.pw2.plot(pen=(10, 3)) # append baseline CSI curve
         self.mainbox.addWidget(self.pw2, row=0, col=1)
         self.pw2.setLabel('left', 'CSI', units='dB')
         self.pw2.setLabel('bottom', 'subcarriers [-58, -2] and [2, 58] ', units=None)
@@ -210,9 +256,8 @@ class App(QtGui.QMainWindow):
         self.fps = 0.
         self.lastupdate = time.time()
 
-        # bring up camera and stream video
-        # self.setup_camera()
-        subprocess.Popen(["python3", "camera_streaming.py"])
+        # to start video streaming
+        # subprocess.Popen(["python3", "camera_streaming.py"])
 
         #### Start  #####################
         self._update()
@@ -241,8 +286,16 @@ class App(QtGui.QMainWindow):
         curve_rssi_list[node_id].setData(x=self.disp_time, y=rssi_que_list[node_id], pen=(node_id, 3))
         curve_csi_list[node_id].setData(y=csi_points_list[node_id], pen=(node_id, 3))
 
+        self.baseline_csi_curve.setData(y=csi_db_baseline, pen=(10, 3))
+
         self.calculate_fps()
         self.update_label()
+
+        if TARGET_NODE == node_id:
+            ret = crossing_decction(csi_points_list[node_id])
+            if ret:
+                subprocess.Popen(["python3", "camera_streaming.py"])
+                return
 
         # schedule the next update call
         QtCore.QTimer.singleShot(PLOT_FRESH_INTERVAL, self._update)
@@ -252,6 +305,9 @@ if __name__ == '__main__':
     # a queue to hold SNR values
     rssi_que_list = [collections.deque(np.zeros(QUEUE_LEN))]
     csi_points_list = [np.zeros(CSI_LEN)]
+
+    csi_data_log = collections.deque()
+    csi_db_baseline = np.zeros(CSI_LEN)
 
     # create a recv socket for packets from ESP32 soft-ap
     sock = socket.socket(socket.AF_INET, # Internet

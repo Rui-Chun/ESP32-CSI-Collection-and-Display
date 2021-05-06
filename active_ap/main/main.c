@@ -7,6 +7,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "mdns.h"
 #include <string.h>
 
 #include "lwip/err.h"
@@ -33,17 +34,14 @@
 #define EXAMPLE_MAX_STA_CONN       16
 
 #define CSI_QUEUE_SIZE             32
-#define HOST_IP_ADDR               "192.168.4.2" // the ip addr of the host computer.
+// #define HOST_IP_ADDR               "192.168.4.2" // the ip addr of the host computer.
 #define HOST_UDP_PORT              8848
 
-// TODO: a wrapper for csi info?
-// typedef struct {
-//     uint8_t src_addr;
-    
-// } csi_entry_t;
 
 
 static const char *TAG = "CSI collection (AP)";
+
+static char *target_host_ipv4 = NULL;
 
 static xQueueHandle csi_info_queue;
 
@@ -108,6 +106,34 @@ void wifi_init_softap(void)
              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS, EXAMPLE_ESP_WIFI_CHANNEL);
 }
 
+static char* generate_hostname(void)
+{
+    uint8_t mac[6];
+    char   *hostname;
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (-1 == asprintf(&hostname, "%s-%02X%02X%02X", "ESP32_AP", mac[3], mac[4], mac[5])) {
+        abort();
+    }
+    return hostname;
+}
+
+static void initialise_mdns(void)
+{
+    char* hostname = generate_hostname();
+    //initialize mDNS
+    ESP_ERROR_CHECK( mdns_init() );
+    //set mDNS hostname (required if you want to advertise services)
+    ESP_ERROR_CHECK( mdns_hostname_set(hostname) );
+    ESP_LOGI(TAG, "mdns hostname set to: [%s]", hostname);
+    //set default mDNS instance name
+    // ESP_ERROR_CHECK( mdns_instance_name_set(EXAMPLE_MDNS_INSTANCE) );
+
+    //initialize service
+    // ESP_ERROR_CHECK( mdns_service_add("ESP32-WebServer", "_http", "_tcp", 80, serviceTxtData, 3) );
+
+    free(hostname);
+}
+
 void wifi_csi_cb(void *ctx, wifi_csi_info_t *data);
 void parse_csi (wifi_csi_info_t *data, char* payload);
 
@@ -132,6 +158,10 @@ void app_main() {
     }
     // register callback that push csi info to the queue
     csi_init("AP", &wifi_csi_cb);
+
+    // init mDNS
+    initialise_mdns();
+
 
     // start another task to handle CSI data
     xTaskCreate(csi_handler_task, "csi_handler_task", 4096, NULL, 4, NULL);
@@ -166,6 +196,11 @@ void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
         return; 
     }
 
+    // if the host is not ready.
+    if (target_host_ipv4 == NULL) {
+        return;
+    }
+
     // This callback pushs a csi entry to the queue.
     wifi_csi_info_t local_csi_info;
     if (data == NULL) {
@@ -192,12 +227,41 @@ void wifi_csi_cb(void *ctx, wifi_csi_info_t *data) {
 
 }
 
+static int query_mdns_host(const char * host_name)
+{
+    ESP_LOGI(TAG, "Query A: %s.local", host_name);
+
+    struct esp_ip4_addr addr;
+    addr.addr = 0;
+
+    esp_err_t err = mdns_query_a(host_name, 4000,  &addr);
+    if(err){
+        if(err == ESP_ERR_NOT_FOUND){
+            ESP_LOGW(TAG, "%s: Host was not found!", esp_err_to_name(err));
+            return -1;
+        }
+        ESP_LOGE(TAG, "Query Failed: %s", esp_err_to_name(err));
+        return -1;
+    }
+
+    ESP_LOGI(TAG, "Query A: %s.local resolved to: " IPSTR, host_name, IP2STR(&addr));
+    if (-1 == asprintf(&target_host_ipv4, IPSTR, IP2STR(&addr))) {
+        abort();
+    } 
+    return 0;
+}
 
 int setup_udp_socket (struct sockaddr_in *dest_addr) {
     int addr_family = 0;
     int ip_protocol = 0;
 
-    dest_addr->sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+    if (target_host_ipv4 == NULL) {
+        while ( query_mdns_host("RuichunMacBook-Pro") < 0) {
+            ESP_LOGW(TAG, "No target host found, try again ...");
+        }
+    }
+
+    dest_addr->sin_addr.s_addr = inet_addr(target_host_ipv4);
     dest_addr->sin_family = AF_INET;
     dest_addr->sin_port = htons(HOST_UDP_PORT);
     addr_family = AF_INET;
@@ -208,7 +272,7 @@ int setup_udp_socket (struct sockaddr_in *dest_addr) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
         return sock;
     }
-    ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, HOST_UDP_PORT);
+    ESP_LOGI(TAG, "Socket created, sending to %s:%d", target_host_ipv4, HOST_UDP_PORT);
     return sock;
 }
 
