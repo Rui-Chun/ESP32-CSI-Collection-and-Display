@@ -10,7 +10,6 @@ This tool is partially based on https://github.com/StevenMHernandez/ESP32-CSI-To
 - A tool to collect and display CSI data form ESP32 devices wirelessly in real-time.
 - An IoT application based on this tool to detect motion and wake up a HTTP camera.
 
-
 ## How to use
 
 - To use ESP32 as a soft-AP and collect CSI data from received packekts.
@@ -39,7 +38,9 @@ TODO
 
 ## Demo
 Two demos are recorded for this project.
+
 Demo1: 
 https://drive.google.com/file/d/1r2jrBMXIeLWo95vzawv2DjRA__pLqYqz/view?usp=sharing
+
 Demo2: 
 https://drive.google.com/file/d/1ACuFZxcK0tmpH7qY5npmv0mJ1KDCvLjI/view?usp=sharing
