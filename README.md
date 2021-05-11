@@ -33,6 +33,8 @@ This tool is partially based on https://github.com/StevenMHernandez/ESP32-CSI-To
           UDP_IP = "192.168.4.2" # put your computer's ip in WiFi netowrk here
           ```
 
+- To use motion detection feature. change 'DETECTION_ON = True' in './active_ap/host_processing_pyqt.py'.
+
 ## A more verbose desciption
 TODO
 
