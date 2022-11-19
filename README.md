@@ -13,9 +13,17 @@ This tool is partially based on https://github.com/StevenMHernandez/ESP32-CSI-To
 ## How to use
 
 - To use ESP32 as a soft-AP and collect CSI data from received packekts.
-  1. Flash the program in './active_ap' to one ESP32 board. You need to change the mDNS hostname first.
+  1. Flash the program in './active_ap' to one ESP32 board. A few configs need be updated according to you devices in 'main.c'.
+     To send the data to the right host, you need to change the mDNS hostname.
         ```
         #define TARGET_HOSTNAME            "XXXXXXXX" // put your computer mDNS name here.
+        ```
+     To filter out the CSI info you wnat, you need to add your sender device's MAC address in this list.
+        ```
+          static const char peer_mac_list[8][20] = {
+              "3c:61:05:4c:36:cd", // esp32 official dev board 0, as soft ap, current device
+              "xx:xx:xx:xx:xx:xx", // mac address(es) of any other peer device you want to collect CSI from.
+          };
         ```
   2. Create some clients that send packets the AP periodically. You can flash the program in './udp_client' to other ESP32 boards. (The tool can support multiple clients.)
   3. Connect your computer to the WiFi network. Run './active_ap/host_processing_pyqt.py'. You need to change the IP address of your computer accoding to the assigned IP from AP.
@@ -24,10 +32,7 @@ This tool is partially based on https://github.com/StevenMHernandez/ESP32-CSI-To
         ```
 
 - To use ESP32 as an active client and colelct CSI data from AP's reply to the ping packets.
-    1. Flash the program in './active_client' to one ESP32 board. You need to change the mDNS hostname first.
-        ```
-        #define TARGET_HOSTNAME            "XXXXXXXX" // put your computer mDNS name here.
-        ```
+    1. Flash the program in './active_client' to one ESP32 board. Similar to above, configs need to be updated.
     2. Connect your computer to the WiFi network. Run './active_ap/host_processing_pyqt.py'. You need to change the IP address of your computer accoding to the assigned IP from AP.
           ```
           UDP_IP = "192.168.4.2" # put your computer's ip in WiFi netowrk here
