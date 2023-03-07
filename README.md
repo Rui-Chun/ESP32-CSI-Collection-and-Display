@@ -12,6 +12,24 @@ This tool is partially based on https://github.com/StevenMHernandez/ESP32-CSI-To
 
 ## How to use
 
+- **Preparation**: Update your devices' mac addresses in the code.
+  In `./active_ap/main/main.c` and `./active_client/main/main.c`, a list of mac addresses is used to filter out CSI of packets from unwanted devices.
+  Using active_ap as an example, the mac address list definition is shown below
+  ```
+  static const uint8_t PEER_NODE_NUM = 4; // self is also included.
+  static const char peer_mac_list[8][20] = {
+      "3c:61:05:4c:36:cd", // esp32 official dev board 0, as soft ap
+      "3c:61:05:4c:3c:28", // esp32 official dev board 1
+      "08:3a:f2:6c:d3:bc", // esp32 unofficial dev board 0
+      "08:3a:f2:6e:05:94", // esp32 unofficial dev board 1
+  };
+  ```
+  Upadte the code above with the mac addresses of your own devices.
+  For example, if you are using one ESP32 as AP, and another one as client,
+  set `PEER_NODE_NUM=2` and replace the first two addresses in `peer_mac_list`.
+  The mac address of your device will be printed out over serial port (monitor of esp-idf) at the begining of programing running.
+  Also, output from serial port can be useful for debuging.
+
 - To use ESP32 as a soft-AP and collect CSI data from received packekts.
   1. Flash the program in './active_ap' to one ESP32 board. A few configs need be updated according to you devices in 'main.c'.
      To send the data to the right host, you need to change the mDNS hostname.
@@ -26,7 +44,7 @@ This tool is partially based on https://github.com/StevenMHernandez/ESP32-CSI-To
           };
         ```
   2. Create some clients that send packets the AP periodically. You can flash the program in './udp_client' to other ESP32 boards. (The tool can support multiple clients.)
-  3. Connect your computer to the WiFi network. Run './active_ap/host_processing_pyqt.py'. You need to change the IP address of your computer accoding to the assigned IP from AP.
+  3. Connect your computer to the ESP32 WiFi network. Run './active_ap/host_processing_pyqt.py'. You need to change the IP address of your computer accoding to the assigned IP from AP.
         ```
         UDP_IP = "192.168.4.2" # put your computer's ip in WiFi netowrk here
         ```
